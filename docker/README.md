@@ -10,7 +10,7 @@ Each application is a folder. Each folder contains at least a compose-<NameOfThe
 If a folder name starts with *network*, the compose file is meant to define explictly a network with a simple whoami container.
 
 ### Environments variables and files
-
+The compose files leverage environment variables and files. Environment variables related to the application are stored in the same folder
 
 ### Network structure
 The docker 
