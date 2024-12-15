@@ -30,10 +30,25 @@ Additional configuration files may be present depending on the application's req
 
 Folders prefixed with *network* contain compose files that explicitly define networks using a whoami container as a placeholder.
 
-### Environment Variables
+### Variables
+#### Environment variables
 Environment variables are organized in two levels:
 - Global: `global-compose-variable.env` in the docker folder contains variables used across multiple containers (Docker versions, network names, etc.)
 - Local: `local-compose-variable.env` in each application folder contains application-specific variables
+
+#### Environment Variable Interpolation
+Docker Compose supports variable interpolation using the `${VARIABLE:-default}` syntax. This powerful feature allows you to:
+- Use environment variables from your system
+- Provide default values when variables aren't set
+- Make your compose files more flexible and secure
+
+For example, in a compose file:
+```yaml
+container_name: bazarr
+environment:
+ - PUID=${PUID:-1017}  # Uses PUID from env file or system, defaults to 1017 if not found
+ - PGID=${PGID:-1000}  # Uses PGID from env file or system, defaults to 1000 if not found
+```
 
 ### Network Structure
 The infrastructure uses multiple segregated networks for enhanced security and organization:
