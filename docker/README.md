@@ -33,8 +33,8 @@ Folders prefixed with *network* contain compose files that explicitly define net
 ### Variables
 #### Environment variables
 Environment variables are organized in two levels:
-- Global: `global-compose-variable.env` in the docker folder contains variables used across multiple containers (Docker versions, network names, etc.)
-- Local: `local-compose-variable.env` in each application folder contains application-specific variables
+- Global: `env-docker.env` in the docker folder contains variables used across multiple containers (Docker versions, network names, etc.)
+- Local: `env-<ApplicationName>.env` in each application folder contains application-specific variables
 
 #### Environment Variable Interpolation
 Docker Compose supports variable interpolation using the `${VARIABLE:-default}` syntax. This powerful feature allows you to:
@@ -52,8 +52,8 @@ environment:
 
 ### Network Structure
 The infrastructure uses multiple segregated networks for enhanced security and organization:
-- `traefik-network`: Connects containers to the Traefik reverse proxy
-- `notification-network`: Enables container access to the mailrise notification service
+- `traefik-net`: Connects containers to the Traefik reverse proxy
+- `notification-net`: Enables container access to the mailrise notification service
 - Additional networks as needed for specific applications
 
 ### Traefik Configuration
