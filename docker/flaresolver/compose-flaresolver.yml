@@ -1,0 +1,43 @@
+# compose-flaresolverr.yml
+version: ${DOCKER_COMPOSE_VERSION:-3.8}
+
+networks:
+  ${PIRATE_NETWORK:-pirate-net}:      # Network for *arr services communication
+    external: true
+
+services:
+  flaresolverr:
+    env_file:
+      - ../env-docker.env             # Global environment variables
+      - ./env-flaresolverr.env        # Application-specific environment variables
+    image: ${FLARESOLVERR_IMAGE:-ghcr.io/flaresolverr/flaresolverr:latest}
+    container_name: ${CONTAINER_NAME:-flaresolverr}
+    environment:
+      - TZ=${TZ:-Europe/Paris}        # Timezone configuration
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-8191}/health"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    networks:
+      - ${PIRATE_NETWORK:-pirate-net}
+    labels:
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+# env-flaresolverr.env
+# Container settings
+FLARESOLVERR_IMAGE=ghcr.io/flaresolverr/flaresolverr:latest
+CONTAINER_NAME=flaresolverr
+APP_PORT=8191
+
+# Application configuration
+LOG_LEVEL=info
+LOG_HTML=false
+CAPTCHA_SOLVER=none

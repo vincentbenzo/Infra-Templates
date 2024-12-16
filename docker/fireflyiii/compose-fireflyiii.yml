@@ -1,0 +1,118 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:
+    external: true
+  internal-net:
+    driver: bridge
+
+services:
+  fireflyiii-app:
+    env_file:
+      - ../env-docker.env
+      - ./env-fireflyiii.env
+    image: ${FIREFLYIII_IMAGE:-fireflyiii/core:latest}
+    container_name: ${APP_CONTAINER_NAME:-fireflyiii-app}
+    volumes:
+      - ${UPLOAD_PATH:-./fireflyiii_uploads}:/var/www/html/storage/upload
+    depends_on:
+      - fireflyiii-db
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}
+      - internal-net
+      - ${NOTIFICATION_NETWORK:-notification-net}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${APP_PORT:-8080}/health"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.rule=Host(`${FIREFLYIII_SUBDOMAIN:-bank}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.middlewares=httptohttps
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.rule=Host(`${FIREFLYIII_SUBDOMAIN:-bank}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.entrypoints=https
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.service=${APP_CONTAINER_NAME:-fireflyiii-app}_server_service
+      - traefik.http.services.${APP_CONTAINER_NAME:-fireflyiii-app}_server_service.loadbalancer.server.port=${APP_PORT:-8080}
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+  fireflyiii-db:
+    env_file:
+      - ../env-docker.env
+      - ./env-fireflyiii.env
+    image: ${DB_IMAGE:-mariadb:latest}
+    container_name: ${DB_CONTAINER_NAME:-fireflyiii-db}
+    volumes:
+      - ${DB_PATH:-./fireflyiii_db}:/var/lib/mysql
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+  fireflyiii-fidi:
+    env_file:
+      - ../env-docker.env
+      - ./env-fireflyiii.env
+    image: ${FIDI_IMAGE:-fireflyiii/data-importer:latest}
+    container_name: ${FIDI_CONTAINER_NAME:-fireflyiii-fidi}
+    volumes:
+      - ${IMPORTER_CONFIG_PATH:-./fireflyiii_data_importer_config}:/mnt/config-import
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}
+      - internal-net
+    depends_on:
+      - fireflyiii-app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${FIDI_PORT:-8080}/health"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.rule=Host(`${FIDI_SUBDOMAIN:-fidi}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.middlewares=httptohttps
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.rule=Host(`${FIDI_SUBDOMAIN:-fidi}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.entrypoints=https
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.service=${FIDI_CONTAINER_NAME:-fireflyiii-fidi}_server_service
+      - traefik.http.services.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}_server_service.loadbalancer.server.port=${FIDI_PORT:-8080}
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+  firefly-crontab:
+    env_file:
+      - ../env-docker.env
+      - ./env-fireflyiii.env
+    image: ${CRONTAB_IMAGE:-firefly-crontab-withcurl:latest}
+    build:
+      context: ${CRONTAB_BUILD_CONTEXT:-./crontab}
+      dockerfile: ${CRONTAB_DOCKERFILE:-./crontab.Dockerfile}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CRONTAB_CONFIG_PATH:-./crontab/config-crontab.json}:/opt/crontab/config.json:rw
+      - ${BOURSORAMA_CONFIG_PATH:-./crontab/importer-boursorama-config}:/opt/crontab/importer-boursorama-config:rw
+      - ${N26_CONFIG_PATH:-./crontab/importer-n26-config}:/opt/crontab/importer-n26-config:rw
+    restart: unless-stopped

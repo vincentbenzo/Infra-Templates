@@ -1,0 +1,53 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:
+    external: true
+
+services:
+  etesync:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-etesync.env    # Application-specific environment variables
+    image: ${ETESYNC_IMAGE:-victorrds/etesync:alpine}
+    container_name: ${CONTAINER_NAME:-etesync}
+    user: ${PUID:-1067}:${PGID:-1000}
+    environment:
+      - SERVER=${SERVER_TYPE:-http-socket}
+      - SUPER_USER=${ADMIN_USER:-admin}
+      - SUPER_PASS=${ADMIN_PASS:-changeme}
+    volumes:
+      - ${DATA_PATH:-./etebase_data}:/data:rw
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-3735}/ && wget --no-verbose --tries=1 --spider https://${ETESYNC_SUBDOMAIN:-sync}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-http.rule=Host(`${ETESYNC_SUBDOMAIN:-sync}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.rule=Host(`${ETESYNC_SUBDOMAIN:-sync}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.service=${CONTAINER_NAME:-etesync}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-etesync}_server_service.loadbalancer.server.port=${APP_PORT:-3735}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
