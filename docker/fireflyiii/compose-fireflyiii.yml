@@ -11,8 +11,8 @@ networks:
 services:
   fireflyiii-app:
     env_file:
-      - ../env-docker.env
-      - ./env-fireflyiii.env
+      - ../env-docker.env    # Global environment variables
+      - ./env-fireflyiii.env    # Application-specific environment variables
     image: ${FIREFLYIII_IMAGE:-fireflyiii/core:latest}
     container_name: ${APP_CONTAINER_NAME:-fireflyiii-app}
     volumes:
@@ -30,19 +30,24 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-3}
       start_period: ${HEALTHCHECK_START_PERIOD:-40s}
     labels:
+      # Basic Traefik setup
       - traefik.enable=true
       - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.rule=Host(`${FIREFLYIII_SUBDOMAIN:-bank}.${BASE_DOMAIN:-yourdomain.com}`)
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.entrypoints=http
       - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.rule=Host(`${FIREFLYIII_SUBDOMAIN:-bank}.${BASE_DOMAIN:-yourdomain.com}`)
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.entrypoints=https
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
       - traefik.http.routers.${APP_CONTAINER_NAME:-fireflyiii-app}-https.service=${APP_CONTAINER_NAME:-fireflyiii-app}_server_service
       - traefik.http.services.${APP_CONTAINER_NAME:-fireflyiii-app}_server_service.loadbalancer.server.port=${APP_PORT:-8080}
+      # Enable automatic updates through Watchtower
       - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
