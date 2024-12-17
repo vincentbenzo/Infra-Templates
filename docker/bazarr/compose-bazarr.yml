@@ -49,7 +49,7 @@ services:
      - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.rule=Host(`${BAZARR_SUBDOMAIN:-subtitle}.${BASE_DOMAIN:-yourdomain.com}`)
      - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.entrypoints=https
      - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
-     - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
+     - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
      - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
      # Service definition
      - traefik.http.routers.${CONTAINER_NAME:-bazarr}-https.service=${CONTAINER_NAME:-bazarr}_server_service
