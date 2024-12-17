@@ -43,7 +43,7 @@ services:
       - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.rule=Host(`${ETESYNC_SUBDOMAIN:-sync}.${BASE_DOMAIN:-yourdomain.com}`)
       - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.entrypoints=https
       - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
-      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.domains[0].main=*.${BASE_DOMAIN:-*.yourdomain.com}
       - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
       # Service definition
       - traefik.http.routers.${CONTAINER_NAME:-etesync}-https.service=${CONTAINER_NAME:-etesync}_server_service
