@@ -2,7 +2,7 @@
 version: ${DOCKER_COMPOSE_VERSION:-3.8}
 
 networks:
-  ${PIRATE_NETWORK:-pirate-net}:      # Network for *arr services communication
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
     external: true
 
 services:
@@ -13,6 +13,9 @@ services:
     image: ${FLARESOLVERR_IMAGE:-ghcr.io/flaresolverr/flaresolverr:latest}
     container_name: ${CONTAINER_NAME:-flaresolverr}
     environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
       - TZ=${TZ:-Europe/Paris}        # Timezone configuration
     healthcheck:
       test: 
@@ -25,19 +28,8 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-3}
       start_period: ${HEALTHCHECK_START_PERIOD:-40s}
     networks:
-      - ${PIRATE_NETWORK:-pirate-net}
+      - ${PROXY_NETWORK:-proxy-public-net}
     labels:
       # Enable automatic updates through Watchtower
       - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
-
-# env-flaresolverr.env
-# Container settings
-FLARESOLVERR_IMAGE=ghcr.io/flaresolverr/flaresolverr:latest
-CONTAINER_NAME=flaresolverr
-APP_PORT=8191
-
-# Application configuration
-LOG_LEVEL=info
-LOG_HTML=false
-CAPTCHA_SOLVER=none
