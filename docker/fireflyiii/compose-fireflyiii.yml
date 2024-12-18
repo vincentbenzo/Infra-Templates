@@ -1,9 +1,9 @@
 version: ${DOCKER_COMPOSE_VERSION:-3.7}
 
 networks:
-  ${PROXY_NETWORK:-proxy-public-net}:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
     external: true
-  ${NOTIFICATION_NETWORK:-notification-net}:
+  ${NOTIFICATION_NETWORK:-notification-net}:      # Network for notification services
     external: true
   internal-net:
     driver: bridge
@@ -11,7 +11,7 @@ networks:
 services:
   fireflyiii-app:
     env_file:
-      - ../env-docker.env    # Global environment variables
+      - ../env-docker.env       # Global environment variables
       - ./env-fireflyiii.env    # Application-specific environment variables
     image: ${FIREFLYIII_IMAGE:-fireflyiii/core:latest}
     container_name: ${APP_CONTAINER_NAME:-fireflyiii-app}
@@ -95,19 +95,24 @@ services:
       retries: ${HEALTHCHECK_RETRIES:-3}
       start_period: ${HEALTHCHECK_START_PERIOD:-40s}
     labels:
+      # Basic Traefik setup  
       - traefik.enable=true
       - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.rule=Host(`${FIDI_SUBDOMAIN:-fidi}.${BASE_DOMAIN:-yourdomain.com}`)
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.entrypoints=http
       - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      # HTTPS configuration with SSL
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-http.middlewares=httptohttps
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.rule=Host(`${FIDI_SUBDOMAIN:-fidi}.${BASE_DOMAIN:-yourdomain.com}`)
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.entrypoints=https
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.domains[0].main=${WILDCARD_DOMAIN:-*.yourdomain.com}
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
       - traefik.http.routers.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}-https.service=${FIDI_CONTAINER_NAME:-fireflyiii-fidi}_server_service
       - traefik.http.services.${FIDI_CONTAINER_NAME:-fireflyiii-fidi}_server_service.loadbalancer.server.port=${FIDI_PORT:-8080}
+      # Enable automatic updates through Watchtower
       - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 

@@ -1,7 +1,7 @@
 version: ${DOCKER_COMPOSE_VERSION:-3.7}
 
 networks:
-  ${PROXY_NETWORK:-proxy-public-net}:
+  ${PROXY_NETWORK:-proxy-public-net}:         # Network for reverse proxy traffic
     external: true
 
 services:

@@ -6,19 +6,19 @@ version: ${DOCKER_COMPOSE_VERSION:-3.7}
 # other stacks can attach to it and use traefik
 
 networks:
-  ${MEDIA_NETWORK:-proxy-public-net}:
-    name: ${MEDIA_NETWORK:-proxy-public-net}
+  ${PROXY_NETWORK:-proxy-public-net}:
+    name: ${PROXY_NETWORK:-proxy-public-net}
     driver: bridge
     attachable: true
     ipam:
       config:
-        - subnet: ${MEDIA_NETWORK_SUBNET:-172.16.1.0/24}
+        - subnet: ${PROXY_NETWORK_SUBNET:-172.16.1.0/24}
 services:
-  ${MEDIA_NETWORK:-proxy-public-net}:
+  ${PROXY_NETWORK:-proxy-public-net}:
     env_file:
       - ../env-docker.env    # Global environment variables
     image: containous/whoami
-    container_name: ${MEDIA_NETWORK:-proxy-public-net}
+    container_name: ${PROXY_NETWORK:-proxy-public-net}
     networks:
-      - ${MEDIA_NETWORK:-proxy-public-net}
+      - ${PROXY_NETWORK:-proxy-public-net}
     restart: unless-stopped

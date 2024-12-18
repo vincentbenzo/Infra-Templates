@@ -1,0 +1,29 @@
+# env-joplin.env
+# Application settings
+JOPLIN_IMAGE=joplin/server:latest
+CONTAINER_NAME=joplin_app
+APP_PORT=22300
+
+# Domain configuration
+JOPLIN_SUBDOMAIN=notes
+BASE_DOMAIN=yourdomain.com
+
+# Database configuration
+DB_IMAGE=postgres:15
+DB_CONTAINER_NAME=joplin_db
+DB_USER=joplin
+DB_NAME=joplin_db
+DB_PORT=5432
+DB_PATH=./db/joplin
+
+# Network configuration
+JOPLIN_NETWORK=joplin-internal
+
+# Email configuration
+MAILER_ENABLED=1
+SMTP_HOST=mailrise
+SMTP_PORT=8025
+SMTP_SECURITY=none
+
+# Sensitive information - Should be in a separate .env file not tracked by git
+# DB_PASSWORD=your_database_password_here

@@ -1,0 +1,86 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.8}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:
+    external: true
+  ${IDENTITY_NETWORK:-identity-net}:
+    external: true
+
+services:
+  freeipa-server:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-freeipa.env    # Application-specific environment variables
+    image: ${IDENTITY_IMAGE:-freeipa/freeipa-server:rocky-9}
+    container_name: ${CONTAINER_NAME:-freeipa-server}
+    hostname: ${FREEIPA_SUBDOMAIN:-identity:-identity}
+    domainname: ${BASE_DOMAIN:-yourdomain.com}
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}
+      - ${IDENTITY_NETWORK:-identity-net}
+    environment:
+      - IPA_SERVER_HOSTNAME=${FREEIPA_SUBDOMAIN:-identity:-identity}.${BASE_DOMAIN:-yourdomain.com}
+      - IPA_SERVER_IP=${IDENTITY_IP:-192.168.1.100}
+      - DNS=${DNS_SERVER:-192.168.1.1}
+      - TZ=${TZ:-Europe/Paris}
+    command:
+      - ipa-server-install
+      - --realm=${IDENTITY_REALM:-yourdomain.com}
+      - --domain=${BASE_DOMAIN:-yourdomain.com}
+      - --ds-password=${DS_PASSWORD}
+      - --admin-password=${ADMIN_PASSWORD}
+      - --no-host-dns
+      - --setup-dns
+      - --auto-forwarders
+      - --allow-zone-overlap
+      - --no-dnssec-validation
+      - --unattended
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "curl -k --fail https://localhost:443/ipa/ui/ && curl -k --fail https://${FREEIPA_SUBDOMAIN:-identity:-identity}.${BASE_DOMAIN:-yourdomain.com}/ && systemctl is-active --quiet dirsrv.target && systemctl is-active --quiet krb5kdc.service && systemctl is-active --quiet named.service"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    volumes:
+      - ${DATA_PATH:-./data}:/data
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    cap_add:
+      - SYS_TIME
+    ports:
+      - "${DNS_TCP_PORT:-53}:53/tcp"
+      - "${DNS_UDP_PORT:-53}:53/udp"
+      - "${LDAP_PORT:-389}:389/tcp"
+      - "${LDAPS_PORT:-636}:636/tcp"
+      - "${KERBEROS_TCP_PORT:-88}:88/tcp"
+      - "${KERBEROS_ADMIN_TCP_PORT:-464}:464/tcp"
+      - "${KERBEROS_UDP_PORT:-88}:88/udp"
+      - "${KERBEROS_ADMIN_UDP_PORT:-464}:464/udp"
+    labels:
+      #connect the container to traefik and define which network to use
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      #enabling http
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-http.rule=Host(`${FREEIPA_SUBDOMAIN:-identity:-identity}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-http.entrypoints=http
+      #Define and use of middelware to force http to https
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-http.middlewares=httptohttps
+      #enabling https
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.rule=Host(`${FREEIPA_SUBDOMAIN:-identity:-identity}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.entrypoints=https
+      #Certificate resolver and certificates names to use for tls
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      #Define what port to reach to access the container/service
+      - traefik.http.routers.${CONTAINER_NAME:-freeipa-server}-https.service=${CONTAINER_NAME:-freeipa-server}_service
+      - traefik.http.services.${CONTAINER_NAME:-freeipa-server}_service.loadbalancer.server.port=443
+      #Watchtower watching updates
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped

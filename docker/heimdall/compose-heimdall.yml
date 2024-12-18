@@ -1,0 +1,54 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:
+    external: true
+
+services:
+  heimdall:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-heimdall.env   # Application-specific environment variables
+    image: ${HEIMDALL_IMAGE:-linuxserver/heimdall:latest}
+    container_name: ${CONTAINER_NAME:-heimdall}
+    environment:
+      - PUID=${PUID:-1008}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Paris}
+    volumes:
+      - ${CONFIG_PATH:-./config}:/config
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-80}/ && wget --no-verbose --tries=1 --spider https://${HEIMDALL_SUBDOMAIN:-www}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      #connect the container to traefik and define which network to use
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      #enabling http      
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-http.rule=Host(`${HEIMDALL_SUBDOMAIN:-www}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-http.entrypoints=http
+      #Define and use of middelware to force http to https
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-http.middlewares=httptohttps
+      #enabling https
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.rule=Host(`${HEIMDALL_SUBDOMAIN:-www}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.entrypoints=https
+      #Certificate resolver and certificates names to use for tls
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      #Define what port to reach to access the container/service
+      - traefik.http.routers.${CONTAINER_NAME:-heimdall}-https.service=${CONTAINER_NAME:-heimdall}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-heimdall}_server_service.loadbalancer.server.port=${APP_PORT:-80}
+      #Watchtower watching updates
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped

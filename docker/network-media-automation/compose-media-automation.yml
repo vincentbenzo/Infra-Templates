@@ -6,19 +6,19 @@ version: ${DOCKER_COMPOSE_VERSION:-3.7}
 # other stacks can attach to it
 
 networks:
-  ${MEDIA_AUTOMATION_NETWORK:-media-automation-net}:
-    name: ${MEDIA_AUTOMATION_NETWORK:-media-automation-net}
+  ${MEDIA_NETWORK:-media-automation-net}:
+    name: ${MEDIA_NETWORK:-media-automation-net}
     driver: bridge
     attachable: true
     ipam:
       config:
-        - subnet: ${MEDIA_AUTOMATION_NETWORK_SUBNET:-172.24.2.0/24}
+        - subnet: ${MEDIA_NETWORK_SUBNET:-172.24.2.0/24}
 services:
-  ${MEDIA_AUTOMATION_NETWORK:-media-automation-net}:
+  ${MEDIA_NETWORK:-media-automation-net}:
     env_file:
       - ../env-docker.env    # Global environment variables
     image: containous/whoami
-    container_name: ${MEDIA_AUTOMATION_NETWORK:-media-automation-net}
+    container_name: ${MEDIA_NETWORK:-media-automation-net}
     networks:
-      - ${MEDIA_AUTOMATION_NETWORK:-media-automation-net}
+      - ${MEDIA_NETWORK:-media-automation-net}
     restart: unless-stopped
