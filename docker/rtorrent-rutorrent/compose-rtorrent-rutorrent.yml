@@ -1,0 +1,75 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${MEDIA_NETWORK:-media-automation-net}:     # Network for media management services
+    external: true
+
+services:
+  torrent:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-torrent.env    # Application-specific environment variables
+    image: ${TORRENT_IMAGE:-binhex/arch-rtorrentvpn:latest}
+    container_name: ${CONTAINER_NAME:-torrent}
+    environment:
+      - UMASK=${UMASK:-000}
+      - PUID=${PUID:-1006}                     # User ID for file permissions
+      - PGID=${PGID:-1000}                     # Group ID for file permissions
+      - PHP_TZ=${TZ:-Europe/Paris}             # Timezone configuration
+      - VPN_ENABLED=${VPN_ENABLED:-no}
+      - DEBUG=${DEBUG:-true}
+      - STRICT_PORT_FORWARD=${STRICT_PORT_FORWARD:-no}
+      - ENABLE_PRIVOXY=${ENABLE_PRIVOXY:-no}
+      - ENABLE_AUTODL_IRSI=${ENABLE_AUTODL_IRSI:-yes}
+      - ENABLE_RPC2=${ENABLE_RPC2:-yes}
+      - ENABLE_RPC2_AUTH=${ENABLE_RPC2_AUTH:-yes}
+      - RPC2_USER=${RPC2_USER:-rtorrent}
+      - RPC2_PASS=${RPC2_PASS:-changeme}
+      - ENABLE_WEBUI_AUTH=${ENABLE_WEBUI_AUTH:-no}
+      - WEBUI_USER=${WEBUI_USER:-rtorrent}
+      - WEBUI_PASS=${WEBUI_PASS:-changeme}
+      - LAN_NETWORK=${LAN_NETWORK:-172.16.2.0/24}
+      - NAME_SERVERS=${NAME_SERVERS:-1.1.1.1}
+    volumes:
+      - ${TORRENTS_PATH:-./data}:/data/torrents  # Torrents data
+      - ${CONFIG_PATH:-./config}:/config                                      # Configuration data
+      - /etc/localtime:/etc/localtime:ro                                     # Timezone data
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+      - ${MEDIA_NETWORK:-media-automation-net}        # For media services communication
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-9080}/ && wget --no-verbose --tries=1 --spider https://${TORRENT_SUBDOMAIN:-torrent}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-http.rule=Host(`${TORRENT_SUBDOMAIN:-torrent}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.rule=Host(`${TORRENT_SUBDOMAIN:-torrent}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.service=${CONTAINER_NAME:-torrent}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-torrent}_server_service.loadbalancer.server.port=${APP_PORT:-9080}
+      # Authentication middleware
+      - traefik.http.routers.${CONTAINER_NAME:-torrent}-https.middlewares=mydigestauth@file
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped

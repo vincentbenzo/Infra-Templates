@@ -1,0 +1,24 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+# What is this?
+#
+# This stack exists solely to deploy the identity-net bridge network, so that
+# other stacks can attach to it
+
+networks:
+  ${MEDIA_NETWORK:-identity-net}:
+    name: ${MEDIA_NETWORK:-identity-net}
+    driver: bridge
+    attachable: true
+    ipam:
+      config:
+        - subnet: ${MEDIA_NETWORK_SUBNET:-172.24.3.0/24}
+services:
+  ${MEDIA_NETWORK:-identity-net}:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+    image: containous/whoami
+    container_name: ${MEDIA_NETWORK:-identity-net}
+    networks:
+      - ${MEDIA_NETWORK:-identity-net}
+    restart: unless-stopped
