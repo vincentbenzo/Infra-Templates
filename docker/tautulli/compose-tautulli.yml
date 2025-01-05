@@ -1,0 +1,58 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${MEDIA_NETWORK:-media-automation-net}:     # Network for media management services
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:   # Network for notification services
+    external: true
+
+services:
+  tautulli:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-tautulli.env   # Application-specific environment variables
+    image: ${TAUTULLI_IMAGE:-linuxserver/tautulli:latest}
+    container_name: ${CONTAINER_NAME:-tautulli}
+    environment:
+      - PUID=${PUID:-1012}                     # User ID for file permissions
+      - PGID=${PGID:-1000}                     # Group ID for file permissions
+      - TZ=${TZ:-Europe/Paris}                 # Timezone configuration
+    volumes:
+      - ${CONFIG_PATH:-./config}:/config                                                           # Configuration data
+      - ${PLEX_LOGS_PATH:-./logs}:/logs  # Plex logs
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+      - ${MEDIA_NETWORK:-media-automation-net}        # For media services communication
+      - ${NOTIFICATION_NETWORK:-notification-net}     # For notifications
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-8181}/ && wget --no-verbose --tries=1 --spider https://${TAUTULLI_SUBDOMAIN:-tautulli}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-http.rule=Host(`${TAUTULLI_SUBDOMAIN:-tautulli}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-https.rule=Host(`${TAUTULLI_SUBDOMAIN:-tautulli}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-tautulli}-https.service=${CONTAINER_NAME:-tautulli}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-tautulli}_server_service.loadbalancer.server.port=${APP_PORT:-8181}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped

@@ -1,0 +1,86 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:  # Network for notification services
+    external: true
+  internal_wikijs:                          # Internal network for wiki-db communication
+    driver: bridge
+
+services:
+  db:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-wikijs.env     # Application-specific environment variables
+    image: ${POSTGRES_IMAGE:-postgres:11-alpine}
+    container_name: ${DB_CONTAINER_NAME:-wikijs-db}
+    environment:
+      - POSTGRES_DB=${DB_NAME:-wiki}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+      - POSTGRES_USER=${DB_USER:-wikijs}
+    volumes:
+      - ${DB_PATH:-./db}:/var/lib/postgresql/data
+    networks:
+      - internal_wikijs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-wikijs}"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    restart: unless-stopped
+
+  wiki:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-wikijs.env     # Application-specific environment variables
+    image: ${WIKIJS_IMAGE:-requarks/wiki:2}
+    container_name: ${CONTAINER_NAME:-wikijs}
+    depends_on:
+      - db
+    environment:
+      - DB_TYPE=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-wikijs}
+      - DB_PASS=${DB_PASSWORD:-changeme}
+      - DB_NAME=${DB_NAME:-wiki}
+    volumes:
+      - ${GIT_KEYS_PATH:-./wikijs/git-keys}:/etc/wiki/wikijs-ssh-keys
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+      - internal_wikijs                             # For database access
+      - ${NOTIFICATION_NETWORK:-notification-net}     # For notifications
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-3000}/ && wget --no-verbose --tries=1 --spider https://${WIKIJS_SUBDOMAIN:-wiki}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-http.rule=Host(`${WIKIJS_SUBDOMAIN:-wiki}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.rule=Host(`${WIKIJS_SUBDOMAIN:-wiki}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-wikijs}-https.service=${CONTAINER_NAME:-wikijs}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-wikijs}_server_service.loadbalancer.server.port=${APP_PORT:-3000}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped

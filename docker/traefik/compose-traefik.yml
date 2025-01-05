@@ -1,0 +1,78 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+secrets:
+  ovh_endpoint:
+    file: ${SECRETS_PATH:-/mnt/traefik/secrets}/ovh_endpoint.secret
+  ovh_application_key:
+    file: ${SECRETS_PATH:-/mnt/traefik/secrets}/ovh_application_key.secret
+  ovh_application_secret:
+    file: ${SECRETS_PATH:-/mnt/traefik/secrets}/ovh_application_secret.secret
+  ovh_consumer_key:
+    file: ${SECRETS_PATH:-/mnt/traefik/secrets}/ovh_consumer_key.secret
+  cloudflare_api_token:
+    file: ${SECRETS_PATH:-/mnt/traefik/secrets}/cloudflare_api_token.secret
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+
+services:
+  traefik:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-traefik.env    # Application-specific environment variables
+    image: ${TRAEFIK_IMAGE:-traefik:v2.11}
+    container_name: ${CONTAINER_NAME:-traefik}
+    ports:
+      - "${HTTP_PORT:-80}:80"     # The HTTP port
+      - "${HTTPS_PORT:-443}:443"  # The HTTPS port
+    secrets:
+      - "ovh_endpoint"
+      - "ovh_application_key"
+      - "ovh_application_secret"
+      - "ovh_consumer_key"
+      - "cloudflare_api_token"
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      - OVH_ENDPOINT_FILE=/run/secrets/ovh_endpoint
+      - OVH_APPLICATION_KEY_FILE=/run/secrets/ovh_application_key
+      - OVH_APPLICATION_SECRET_FILE=/run/secrets/ovh_application_secret
+      - OVH_CONSUMER_KEY_FILE=/run/secrets/ovh_consumer_key
+      - CF_DNS_API_TOKEN_FILE=/run/secrets/cloudflare_api_token
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+    volumes:
+      - ${CONFIG_PATH:-/mnt/traefik}/traefik.toml:/etc/traefik/traefik.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CERT_PATH:-/mnt/traefik/letsencrypt}:/letsencrypt/
+      - ${LOG_PATH:-/mnt/traefik}/traefik.log:/var/traefik.log
+      - ${DYNAMIC_CONF_PATH:-/mnt/traefik/dynamic-conf}:/etc/traefik/dynamic-conf:ro
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${HTTP_PORT:-80}/ && wget --no-verbose --tries=1 --spider https://${TRAEFIK_SUBDOMAIN:-traefik}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-http.rule=Host(`${TRAEFIK_SUBDOMAIN:-traefik}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.rule=Host(`${TRAEFIK_SUBDOMAIN:-traefik}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.service=api@internal
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Authentication configuration
+      - traefik.http.routers.${CONTAINER_NAME:-traefik}dashboard-https.middlewares=auth
+    
+    restart: unless-stopped
