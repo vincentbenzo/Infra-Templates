@@ -1,0 +1,59 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${MEDIA_NETWORK:-media-automation-net}:     # Network for media management services
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:   # Network for notification services
+    external: true
+
+services:
+  ombi:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-ombi.env      # Application-specific environment variables
+    image: ${OMBI_IMAGE:-linuxserver/ombi:latest}
+    container_name: ${CONTAINER_NAME:-ombi}
+    environment:
+      - PUID=${PUID:-1007}                     # User ID for file permissions
+      - PGID=${PGID:-1000}                     # Group ID for file permissions
+      - TZ=${TZ:-Europe/Paris}                 # Timezone configuration
+    volumes:
+      - ${CONFIG_PATH:-./config}:/config       # Configuration data
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+      - ${MEDIA_NETWORK:-media-automation-net}        # For media services communication
+      - ${NOTIFICATION_NETWORK:-notification-net}     # For notifications
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-3579}/ && wget --no-verbose --tries=1 --spider https://${OMBI_SUBDOMAIN:-request}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-http.rule=Host(`${OMBI_SUBDOMAIN:-request}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.rule=Host(`${OMBI_SUBDOMAIN:-request}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-ombi}-https.service=${CONTAINER_NAME:-ombi}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-ombi}_server_service.loadbalancer.server.port=${APP_PORT:-3579}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped

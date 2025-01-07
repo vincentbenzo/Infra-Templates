@@ -1,0 +1,54 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+
+services:
+  portainer:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-portainer.env  # Application-specific environment variables
+    image: ${PORTAINER_IMAGE:-portainer/portainer-ce:latest}
+    container_name: ${CONTAINER_NAME:-portainer}
+    environment:
+      - TZ=${TZ:-Europe/Paris}                 # Timezone configuration
+    volumes:
+      - ${DATA_PATH:-./data}:/data             # Portainer data
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket (read-only)
+      - /etc/localtime:/etc/localtime:ro       # Host timezone
+      - /etc/timezone:/etc/timezone:ro         # Host timezone
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}     # For reverse proxy access
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-9000}/ && wget --no-verbose --tries=1 --spider https://${PORTAINER_SUBDOMAIN:-dashboard}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-http.rule=Host(`${PORTAINER_SUBDOMAIN:-dashboard}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.rule=Host(`${PORTAINER_SUBDOMAIN:-dashboard}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-portainer}-https.service=${CONTAINER_NAME:-portainer}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-portainer}_server_service.loadbalancer.server.port=${APP_PORT:-9000}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped

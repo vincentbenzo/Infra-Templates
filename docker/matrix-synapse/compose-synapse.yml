@@ -1,0 +1,88 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:  # Network for notification services
+    external: true
+  matrix-internal-net:                       # Internal network for matrix services
+    driver: bridge
+
+services:
+  matrix-synapse:
+    env_file:
+      - ../env-docker.env                    # Global environment variables
+      - ./env-matrix-synapse.env             # Synapse-specific environment variables
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
+    container_name: ${CONTAINER_NAME:-matrix-synapse}
+    depends_on:
+      - matrix-postgres
+    environment:
+      - SYNAPSE_CONFIG_DIR=${CONFIG_DIR:-/data}
+      - SYNAPSE_CONFIG_PATH=${CONFIG_PATH:-/data/homeserver.yaml}
+      - PUID=${PUID:-1016}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Europe/Paris}               # Timezone configuration
+    volumes:
+      - ${DATA_PATH:-./data}:/data           # Main configuration and data
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}          # For reverse proxy access
+      - ${NOTIFICATION_NETWORK:-notification-net}    # For notifications
+      - matrix-internal-net                         # For database communication
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-8008}/health && wget --no-verbose --tries=1 --spider https://${SYNAPSE_SUBDOMAIN:-synapse}.${BASE_DOMAIN:-yourdomain.com}/_matrix/client/versions"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-http.rule=Host(`${SYNAPSE_SUBDOMAIN:-synapse}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.rule=Host(`${SYNAPSE_SUBDOMAIN:-synapse}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Service definition
+      - traefik.http.routers.${CONTAINER_NAME:-matrix-synapse}-https.service=${CONTAINER_NAME:-matrix-synapse}_server_service
+      - traefik.http.services.${CONTAINER_NAME:-matrix-synapse}_server_service.loadbalancer.server.port=${APP_PORT:-8008}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped
+
+  matrix-postgres:
+    env_file:
+      - ../env-docker.env                    # Global environment variables
+      - ./env-matrix-synapse.env             # Synapse-specific environment variables
+    image: ${POSTGRES_IMAGE:-postgres:13}
+    container_name: ${DB_CONTAINER_NAME:-matrix-postgres}
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_USER=${POSTGRES_USER:-synapse_user}
+      - POSTGRES_DB=${POSTGRES_DB:-synapse_db}
+      - POSTGRES_INITDB_ARGS=${POSTGRES_INITDB_ARGS:---encoding='UTF8' --lc-collate='C' --lc-ctype='C'}
+    volumes:
+      - ${DB_DATA_PATH:-./matrix-synapse-db}:/var/lib/postgresql/
+    networks:
+      - matrix-internal-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse_user}"]
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped

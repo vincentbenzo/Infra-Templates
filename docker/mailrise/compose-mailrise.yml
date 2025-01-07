@@ -1,0 +1,53 @@
+version: ${DOCKER_COMPOSE_VERSION:-3.7}
+
+networks:
+  ${PROXY_NETWORK:-proxy-public-net}:        # Network for reverse proxy traffic
+    external: true
+  ${NOTIFICATION_NETWORK:-notification-net}:  # Network for notification services
+    external: true
+
+services:
+  mailrise:
+    env_file:
+      - ../env-docker.env    # Global environment variables
+      - ./env-mailrise.env   # Application-specific environment variables
+    image: ${MAILRISE_IMAGE:-yoryan/mailrise:latest}
+    container_name: ${CONTAINER_NAME:-mailrise}
+    environment:
+      - PUID=${PUID:-1017}                     # User ID for file permissions
+      - PGID=${PGID:-1000}                     # Group ID for file permissions
+      - TZ=${TZ:-Europe/Paris}                 # Timezone configuration
+    volumes:
+      - ${CONFIG_PATH:-./config/mailrise.conf}:/etc/mailrise.conf:ro   # Configuration file
+    networks:
+      - ${PROXY_NETWORK:-proxy-public-net}           # For reverse proxy access
+      - ${NOTIFICATION_NETWORK:-notification-net}     # For notifications
+    healthcheck:
+      test: 
+        - "CMD"
+        - "/bin/sh"
+        - "-c"
+        - "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT:-8025}/ && wget --no-verbose --tries=1 --spider https://${MAILRISE_SUBDOMAIN:-notification}.${BASE_DOMAIN:-yourdomain.com}/"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-40s}
+    labels:
+      # Basic Traefik setup
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy-public-net}
+      # HTTP configuration with automatic HTTPS redirect
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-http.rule=Host(`${MAILRISE_SUBDOMAIN:-notification}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-http.entrypoints=http
+      - traefik.http.middlewares.httptohttps.redirectscheme.scheme=https
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-http.middlewares=httptohttps
+      # HTTPS configuration with SSL
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-https.rule=Host(`${MAILRISE_SUBDOMAIN:-notification}.${BASE_DOMAIN:-yourdomain.com}`)
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-https.entrypoints=https
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-https.tls.certresolver=${CERT_RESOLVER:-dnschallengeovh}
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-https.tls.domains[0].main=*.${BASE_DOMAIN:-yourdomain.com}
+      - traefik.http.routers.${CONTAINER_NAME:-mailrise}-https.tls.domains[0].sans=${BASE_DOMAIN:-yourdomain.com}
+      # Enable automatic updates through Watchtower
+      - com.centurylinklabs.watchtower.enable=true
+    
+    restart: unless-stopped
